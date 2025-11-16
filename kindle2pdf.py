@@ -25,12 +25,13 @@ import numpy as np
 
 
 class Kindle2PDF:
-    def __init__(self, output_dir="output", wait_time=0.5, similarity_threshold=0.95):
+    def __init__(self, output_dir="output", wait_time=0.5, similarity_threshold=0.9999):
         """
         Args:
             output_dir (str): スクリーンショットとPDFの保存先ディレクトリ
             wait_time (float): ページめくり後の待機時間（秒）
             similarity_threshold (float): 同一ページと判定する類似度（0.0-1.0）
+                                         デフォルト0.9999 = ほぼ完全一致のみを同一と判定
         """
         self.output_dir = Path(output_dir)
         self.wait_time = wait_time
@@ -81,6 +82,9 @@ class Kindle2PDF:
         """
         2つの画像が類似しているかを判定
 
+        より厳格な判定を行い、わずかな変化（ページ番号、テキストの変更など）も
+        検出できるようにする
+
         Returns:
             bool: 類似している場合True
         """
@@ -99,17 +103,14 @@ class Kindle2PDF:
         gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
         gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
 
-        # 構造類似性指標 (SSIM) で比較
-        # SSIMは-1〜1の範囲で、1に近いほど類似
-        score = cv2.matchTemplate(gray1, gray2, cv2.TM_CCOEFF_NORMED)[0][0]
-
-        # より正確な比較: ピクセル単位での差分
+        # 方法1: ピクセル単位での厳密な差分チェック（差分が1以上のピクセルをカウント）
         diff = cv2.absdiff(gray1, gray2)
-        non_zero_count = np.count_nonzero(diff)
+        # 差分が5以上のピクセルを「変更あり」とカウント（ノイズ除去）
+        changed_pixels = np.count_nonzero(diff > 5)
         total_pixels = diff.size
-        similarity = 1 - (non_zero_count / total_pixels)
+        similarity = 1 - (changed_pixels / total_pixels)
 
-        print(f"  画像類似度: {similarity:.4f}")
+        print(f"  画像類似度: {similarity:.6f} (変更ピクセル数: {changed_pixels:,} / {total_pixels:,})")
 
         return similarity >= self.similarity_threshold
 
@@ -293,8 +294,8 @@ def main():
     parser.add_argument(
         "--similarity",
         type=float,
-        default=0.95,
-        help="同一ページ判定の類似度閾値（0.0-1.0、デフォルト: 0.95）"
+        default=0.9999,
+        help="同一ページ判定の類似度閾値（0.0-1.0、デフォルト: 0.9999）"
     )
 
     args = parser.parse_args()
